@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Materiais de Limpeza — Mauê Empório</title>
+<style>
+  :root {
+    --surface-0: #FAF9F6;
+    --surface-1: #F1EFE8;
+    --surface-2: #FFFFFF;
+    --text-primary: #2C2C2A;
+    --text-secondary: #5F5E5A;
+    --text-muted: #888780;
+    --text-danger: #A32D2D;
+    --text-success: #3B6D11;
+    --border: #D3D1C7;
+    --border-accent: #185FA5;
+    --text-accent: #185FA5;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 2rem 1rem;
+  }
+  input, button {
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: var(--radius);
+    border: 0.5px solid var(--border);
+  }
+  input { padding: 6px 8px; }
+  button {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--surface-1); }
+  button:active { transform: scale(0.98); }
+  a.back-link {
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    display: inline-block;
+    margin-bottom: 1rem;
+  }
+</style>
+</head>
+<body>
+
+<div style="max-width: 680px; margin: 0 auto;">
+  <a class="back-link" href="index.html">&larr; Voltar</a>
+  <h1 style="font-size: 22px; font-weight: 500; margin-bottom: 4px;">Materiais de limpeza — Mauê Empório</h1>
+  <p id="status-line" style="font-size:13px; color:var(--text-secondary); margin-top:0; margin-bottom: 1.5rem;">Carregando...</p>
+
+  <div id="summary" style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; margin-bottom:1.5rem;"></div>
+
+  <div id="list" style="display:flex; flex-direction:column; gap:8px;"></div>
+
+  <div style="display:flex; gap:8px; margin-top:1.25rem;">
+    <button id="save-btn" style="flex:1;">Salvar alteracoes</button>
+    <button id="pedido-btn" style="flex:1; border-color:var(--border-accent); color:var(--text-accent);">Fazer pedido</button>
+  </div>
+
+  <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:0.5px solid var(--border);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div style="font-size:14px; font-weight:500;">Mensagem para pedido</div>
+      <button id="copy-btn">Copiar</button>
+    </div>
+    <pre id="msg-preview" style="white-space:pre-wrap; font-family:inherit; font-size:13px; color:var(--text-primary); background:var(--surface-1); border-radius:var(--radius); padding:0.75rem 1rem; margin:0;"></pre>
+  </div>
+</div>
+
+<script>
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIWxnYDtKZJxQGQsv37fN1m_B0frTzgKZ2tZHVjOb8NtH66XgarDNChzhvM2EeaIP83Q/exec";
+const ABA = "Materiais de Limpeza";
+let items = [];
+
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callbackName = "jsonp_cb_" + Math.random().toString(36).slice(2);
+    const script = document.createElement("script");
+    window[callbackName] = (data) => { resolve(data); cleanup(); };
+    function cleanup() {
+      delete window[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      clearTimeout(timer);
+    }
+    const timer = setTimeout(() => { reject(new Error("timeout")); cleanup(); }, 15000);
+    script.onerror = () => { reject(new Error("jsonp failed")); cleanup(); };
+    script.src = url + (url.includes("?") ? "&" : "?") + "callback=" + callbackName;
+    document.body.appendChild(script);
+  });
+}
+
+async function loadFromSheet() {
+  setStatus("Carregando da planilha...");
+  try {
+    const url = SCRIPT_URL + "?aba=" + encodeURIComponent(ABA);
+    const data = await jsonp(url);
+    items = data.map((it, i) => ({
+      id: "item-" + i,
+      nome: it.produto,
+      grupo: it.grupo || ABA,
+      unidade: it.unidade || "unidades",
+      min: Number(it.min) || 0,
+      atual: Number(it.atual) || 0
+    }));
+    setStatus("Conectado — dados carregados da planilha");
+    render();
+  } catch (e) {
+    setStatus("Nao foi possivel carregar a planilha.");
+    console.error(e);
+  }
+}
+
+async function pushToSheet(list) {
+  const payload = list.map(it => ({ produto: it.nome, min: it.min, atual: it.atual }));
+  const url = SCRIPT_URL + "?action=write&aba=" + encodeURIComponent(ABA) + "&payload=" + encodeURIComponent(JSON.stringify(payload));
+  return jsonp(url);
+}
+
+function setStatus(msg) {
+  document.getElementById("status-line").textContent = msg;
+}
+
+function need(item) {
+  return Math.max(0, item.min - item.atual);
+}
+
+function render() {
+  const list = document.getElementById("list");
+  const summary = document.getElementById("summary");
+
+  const totalPedir = items.reduce((acc, it) => acc + need(it), 0);
+  const itensAbaixo = items.filter(it => need(it) > 0).length;
+  const itensOk = items.length - itensAbaixo;
+
+  summary.innerHTML =
+    '<div style="background:var(--surface-1); border-radius:var(--radius); padding:1rem;">' +
+      '<div style="font-size:13px; color:var(--text-secondary);">Itens a pedir</div>' +
+      '<div style="font-size:24px; font-weight:500; color:var(--text-danger);">' + totalPedir + '</div>' +
+    '</div>' +
+    '<div style="background:var(--surface-1); border-radius:var(--radius); padding:1rem;">' +
+      '<div style="font-size:13px; color:var(--text-secondary);">Abaixo do minimo</div>' +
+      '<div style="font-size:24px; font-weight:500;">' + itensAbaixo + '</div>' +
+    '</div>' +
+    '<div style="background:var(--surface-1); border-radius:var(--radius); padding:1rem;">' +
+      '<div style="font-size:13px; color:var(--text-secondary);">Ok</div>' +
+      '<div style="font-size:24px; font-weight:500;">' + itensOk + '</div>' +
+    '</div>';
+
+  list.innerHTML = items.map(it => rowHtml(it)).join("");
+
+  items.forEach(it => {
+    const atualInput = document.getElementById("atual-" + it.id);
+    const minInput = document.getElementById("min-" + it.id);
+    if (atualInput) atualInput.addEventListener("input", e => onChange(it.id, "atual", e.target.value));
+    if (minInput) minInput.addEventListener("input", e => onChange(it.id, "min", e.target.value));
+  });
+
+  document.getElementById("msg-preview").textContent = buildMessage();
+}
+
+function rowHtml(it) {
+  const falta = need(it);
+  const ok = falta === 0;
+  return '<div style="display:flex; align-items:center; gap:12px; background:var(--surface-2); border:0.5px solid var(--border); border-radius:12px; padding:0.75rem 1rem;">' +
+    '<div style="flex:1; min-width:0;">' +
+      '<div style="font-size:14px; font-weight:500; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + it.nome + '</div>' +
+      '<div style="font-size:12px; color:' + (ok ? 'var(--text-success)' : 'var(--text-danger)') + '; margin-top:2px;">' +
+        (ok ? 'Estoque ok' : ('Pedir ' + falta + ' ' + it.unidade)) +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex; align-items:center; gap:4px;">' +
+      '<label style="font-size:11px; color:var(--text-muted);">Min</label>' +
+      '<input type="number" min="0" id="min-' + it.id + '" value="' + it.min + '" style="width:52px; text-align:center;">' +
+    '</div>' +
+    '<div style="display:flex; align-items:center; gap:4px;">' +
+      '<label style="font-size:11px; color:var(--text-muted);">Atual</label>' +
+      '<input type="number" min="0" id="atual-' + it.id + '" value="' + it.atual + '" style="width:52px; text-align:center;">' +
+    '</div>' +
+  '</div>';
+}
+
+function onChange(id, field, value) {
+  const num = Math.max(0, parseInt(value, 10) || 0);
+  const item = items.find(i => i.id === id);
+  item[field] = num;
+  render();
+}
+
+function buildMessage() {
+  const pedir = items.filter(it => need(it) > 0);
+  let msg = "Bom dia, segue o pedido para a semana:\n\n";
+  if (pedir.length === 0) {
+    msg += "Estoque em dia, sem pedido no momento.";
+  } else {
+    msg += pedir.map(it => "- " + it.nome + " — " + need(it) + " " + it.unidade).join("\n");
+    msg += "\n\nObrigado!";
+  }
+  return msg;
+}
+
+document.getElementById("save-btn").addEventListener("click", async () => {
+  setStatus("Salvando na planilha...");
+  try {
+    await pushToSheet(items);
+    setStatus("Alteracoes salvas na planilha");
+  } catch (e) {
+    setStatus("Erro ao salvar. Tente novamente.");
+    console.error(e);
+  }
+});
+
+document.getElementById("pedido-btn").addEventListener("click", async () => {
+  items = items.map(it => need(it) > 0 ? { ...it, atual: it.min } : it);
+  render();
+  setStatus("Registrando pedido na planilha...");
+  try {
+    await pushToSheet(items);
+    setStatus("Pedido registrado — estoque atualizado na planilha");
+  } catch (e) {
+    setStatus("Erro ao registrar pedido. Tente novamente.");
+    console.error(e);
+  }
+});
+
+document.getElementById("copy-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("copy-btn");
+  try {
+    await navigator.clipboard.writeText(buildMessage());
+    btn.textContent = "Copiado";
+    setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+  } catch (e) {
+    console.error("Erro ao copiar", e);
+  }
+});
+
+loadFromSheet();
+</script>
+</body>
+</html>
