@@ -263,7 +263,8 @@ function formatMsg(pedir) {
 
 function buildMessageBlocks() {
   if (currentAba === "Vinhos") {
-    return [{ label: null, text: formatMsg(items.filter(it => need(it) > 0)) }];
+    const pedir = items.filter(it => need(it) > 0 && !it.nome.toLowerCase().startsWith("open wine"));
+    return [{ label: null, text: formatMsg(pedir) }];
   }
   if (currentAba === "Cervejas") {
     const pedir = items.filter(it => need(it) > 0 && CERVEJA_MSG_ITEMS.includes(it.nome));
