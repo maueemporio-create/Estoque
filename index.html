@@ -74,11 +74,8 @@
   </div>
 
   <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:0.5px solid var(--border);">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-      <div style="font-size:14px; font-weight:500;">Mensagem para pedido</div>
-      <button id="copy-btn">Copiar</button>
-    </div>
-    <pre id="msg-preview" style="white-space:pre-wrap; font-family:inherit; font-size:13px; color:var(--text-primary); background:var(--surface-1); border-radius:var(--radius); padding:0.75rem 1rem; margin:0;"></pre>
+    <div style="font-size:14px; font-weight:500; margin-bottom:8px;">Mensagem para pedido</div>
+    <div id="msg-container" style="display:flex; flex-direction:column; gap:12px;"></div>
   </div>
 
   <div style="margin-top:1rem; padding-top:1rem; border-top:0.5px solid var(--border); font-size:12px; color:var(--text-muted);">
@@ -90,6 +87,7 @@
 const URL_KEY = "maue-emporio-script-url";
 const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIWxnYDtKZJxQGQsv37fN1m_B0frTzgKZ2tZHVjOb8NtH66XgarDNChzhvM2EeaIP83Q/exec";
 const ABAS = [
+  { id: "Vinhos", label: "Vinhos" },
   { id: "Cervejas", label: "Cervejas" },
   { id: "Nao Alcoolicos", label: "Nao alcoolicos" },
   { id: "Destilados", label: "Destilados" }
@@ -216,7 +214,7 @@ function render() {
     if (minInput) minInput.addEventListener("input", e => onChange(it.id, "min", e.target.value));
   });
 
-  document.getElementById("msg-preview").textContent = buildMessage();
+  renderMessages();
 }
 
 function rowHtml(it) {
@@ -247,9 +245,12 @@ function onChange(id, field, value) {
   render();
 }
 
-function buildMessage() {
-  const pedir = items.filter(it => need(it) > 0);
-  let msg = "Bom dia, tudo joia?\n\nPrecisando fazer pedido de " + currentAba.toLowerCase() + " (Maue Emporio):\n\n";
+const CERVEJA_MSG_ITEMS = ["Stella Pure Gold 600ml", "Original"];
+const DESTILADO_FORNECEDOR_1 = ["Prata 600ml", "Balsamo 600ml", "Amburana 600ml", "Martini Rosso"];
+const DESTILADO_FORNECEDOR_2 = ["Monin Tangerina", "Monin Maracuja", "Monin Le Fruit Jabuticaba"];
+
+function formatMsg(pedir) {
+  let msg = "Bom dia, segue o pedido para a semana:\n\n";
   if (pedir.length === 0) {
     msg += "Estoque em dia, sem pedido no momento.";
   } else {
@@ -257,6 +258,55 @@ function buildMessage() {
     msg += "\n\nObrigado!";
   }
   return msg;
+}
+
+function buildMessageBlocks() {
+  if (currentAba === "Vinhos") {
+    return [{ label: null, text: formatMsg(items.filter(it => need(it) > 0)) }];
+  }
+  if (currentAba === "Cervejas") {
+    const pedir = items.filter(it => need(it) > 0 && CERVEJA_MSG_ITEMS.includes(it.nome));
+    return [{ label: null, text: formatMsg(pedir) }];
+  }
+  if (currentAba === "Nao Alcoolicos") {
+    return [{ label: null, text: "Sem mensagem automatica para esta categoria." }];
+  }
+  if (currentAba === "Destilados") {
+    const p1 = items.filter(it => need(it) > 0 && DESTILADO_FORNECEDOR_1.includes(it.nome));
+    const p2 = items.filter(it => need(it) > 0 && DESTILADO_FORNECEDOR_2.includes(it.nome));
+    return [
+      { label: "Fornecedor 1", text: formatMsg(p1) },
+      { label: "Fornecedor 2", text: formatMsg(p2) }
+    ];
+  }
+  return [{ label: null, text: formatMsg(items.filter(it => need(it) > 0)) }];
+}
+
+function renderMessages() {
+  const container = document.getElementById("msg-container");
+  const blocks = buildMessageBlocks();
+  container.innerHTML = blocks.map((b, i) =>
+    '<div>' +
+      (b.label ? '<div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">' + b.label + '</div>' : '') +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">' +
+        '<pre style="white-space:pre-wrap; font-family:inherit; font-size:13px; color:var(--text-primary); background:var(--surface-1); border-radius:var(--radius); padding:0.75rem 1rem; margin:0; flex:1;">' + b.text + '</pre>' +
+        '<button class="copy-msg-btn" data-idx="' + i + '" style="white-space:nowrap;">Copiar</button>' +
+      '</div>' +
+    '</div>'
+  ).join("");
+
+  container.querySelectorAll(".copy-msg-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.dataset.idx);
+      try {
+        await navigator.clipboard.writeText(blocks[idx].text);
+        btn.textContent = "Copiado";
+        setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+      } catch (e) {
+        console.error("Erro ao copiar", e);
+      }
+    });
+  });
 }
 
 document.getElementById("save-url-btn").addEventListener("click", saveUrl);
@@ -284,17 +334,6 @@ document.getElementById("pedido-btn").addEventListener("click", async () => {
   } catch (e) {
     setStatus("Erro ao registrar pedido. Confira a URL e tente novamente.");
     console.error(e);
-  }
-});
-
-document.getElementById("copy-btn").addEventListener("click", async () => {
-  const btn = document.getElementById("copy-btn");
-  try {
-    await navigator.clipboard.writeText(buildMessage());
-    btn.textContent = "Copiado";
-    setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
-  } catch (e) {
-    console.error("Erro ao copiar", e);
   }
 });
 
